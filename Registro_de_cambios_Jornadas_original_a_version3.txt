@@ -197,18 +197,3 @@ MOTIVO:
   carga automática por proceso — Catalogo.kt, ProgramaModel.kt,
   MainActivity.kt y Servicios.kt.
 
-6. ALCANCE Y ESTADO DE ESTE DOCUMENTO
---------------------------------------
-Este registro describe los cambios REALMENTE PRESENTES en Jornadas 3.zip,
-no modificaciones que todavía no se aplicaron.
-
-PENDIENTE antes de la versión final:
-1) Serializar y agrupar las actualizaciones repetidas en ProgramaModel.kt.
-2) Diferenciar programa vacío de filtros sin coincidencias en Catalogo.kt.
-3) Opcional para robustez: hacer atómica la marca de inicio automático.
-
-Si esos ajustes se aplican en una versión posterior, actualizar los
-apartados 3.7, 3.8 y 6 para que describan exactamente el archivo entregado.
-
-La comparación de código no sustituye la compilación del proyecto ni las
-pruebas funcionales en un emulador.
