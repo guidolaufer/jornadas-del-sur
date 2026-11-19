@@ -1,0 +1,214 @@
+JORNADAS DEL SUR — REGISTRO DE CAMBIOS DEL PROYECTO
+=================================================
+
+Documento para revisión docente
+Comparación realizada: proyecto original «android.zip» → versión «Jornadas 3.zip».
+Fuente: comparación directa del contenido de ambos archivos ZIP.
+
+1. OBJETIVO DE LOS CAMBIOS
+--------------------------
+Se modificó la aplicación Android original para abordar cuatro requerimientos:
+- Pedido 41: funcionamiento sin conexión y diferenciación entre una descarga
+  exitosa vacía y la ausencia de descargas previas.
+- Pedido 42: actualización completa del programa sin perder favoritas vigentes.
+- Pedido 43: recuperación del día, tema y detalle al recrear la actividad o
+  recuperar una tarea después de finalizar su proceso.
+- Pedido 44: centralización de las descargas automáticas y manuales.
+
+2. ALCANCE DE LA COMPARACIÓN
+----------------------------
+Se detectaron cambios en 9 archivos de código fuente o configuración.
+No se añadieron ni eliminaron archivos del conjunto de fuentes comparado.
+La clase nueva JornadasApp se declaró dentro de Servicios.kt.
+
+Archivos modificados:
+  1) app/build.gradle.kts
+  2) app/src/main/AndroidManifest.xml
+  3) app/src/main/java/ar/jornadas/MainActivity.kt
+  4) app/src/main/java/ar/jornadas/Servicios.kt
+  5) app/src/main/java/ar/jornadas/data/AgendaRepository.kt
+  6) app/src/main/java/ar/jornadas/data/Programa.kt
+  7) app/src/main/java/ar/jornadas/ui/Catalogo.kt
+  8) app/src/main/java/ar/jornadas/ui/Portada.kt
+  9) app/src/main/java/ar/jornadas/ui/ProgramaModel.kt
+
+3. DETALLE DE MODIFICACIONES POR ARCHIVO
+-----------------------------------------
+
+3.1. app/build.gradle.kts
+CAMBIO:
+- Se agregó la dependencia explícita com.squareup.okhttp3:okhttp:4.12.0.
+MOTIVO:
+- Mantener disponible la implementación del cliente OkHttp usado por el
+  interceptor local y Retrofit.
+
+3.2. app/src/main/AndroidManifest.xml
+CAMBIO:
+- Se agregó android:name=".JornadasApp" al elemento <application>.
+MOTIVO:
+- Registrar la subclase Application que proporciona servicios compartidos
+  durante la vida del proceso.
+
+3.3. app/src/main/java/ar/jornadas/MainActivity.kt
+CAMBIOS:
+- El ViewModel se obtiene con ProgramaModel.Factory en lugar de la fábrica
+  predeterminada.
+- onStart() dejó de llamar directamente a recargar() y pasó a invocar
+  recargarSiEsNecesario().
+- Se mantuvo el manejo de la opción de arranque servicio_disponible del Intent.
+MOTIVO:
+- Crear el ViewModel con SavedStateHandle y evitar una descarga nueva cada
+  vez que la Activity se vuelve visible.
+
+3.4. app/src/main/java/ar/jornadas/Servicios.kt
+CAMBIOS:
+- Se hizo privado el constructor de Servicios.
+- Se incorporó el acceso compartido Servicios.obtener(context), protegido
+  con synchronized y una instancia @Volatile.
+- La creación de Room ahora registra MIGRATION_1_2.
+- AgendaRepository recibe también la instancia de base de datos para ejecutar
+  una transacción sobre múltiples operaciones DAO.
+- Se agregó la clase JornadasApp : Application, que expone Servicios de forma
+  compartida mediante lazy.
+MOTIVO:
+- Mantener un servicio de pruebas y un contador de peticiones compartidos
+  durante el proceso, y conservar datos al actualizar la base de Room.
+
+3.5. app/src/main/java/ar/jornadas/data/Programa.kt
+CAMBIOS:
+- Se incorporó la entidad DescargaEstado en la tabla estado_descarga para
+  representar si hubo una descarga exitosa, incluso con cero charlas.
+- El @Database pasó de versión 1 a versión 2 e incorporó la nueva entidad.
+- Se agregó MIGRATION_1_2 para crear estado_descarga sin eliminar la tabla
+  de charlas. Cuando la versión anterior tiene charlas, registra que ya existía
+  un catálogo guardado.
+- La operación original INSERT REPLACE fue sustituida por INSERT IGNORE.
+- Se agregaron métodos DAO para actualizar atributos de la charla sin tocar
+  favorita, eliminar IDs retirados, borrar toda la agenda y registrar/observar
+  el estado de descarga.
+- Se mantuvo la operación SQL que alterna favorita según el ID.
+MOTIVO:
+- Distinguir una edición remota vacía de una instalación sin descarga previa;
+  preservar las marcas al modificar los metadatos de una charla; eliminar
+  las charlas que ya no aparecen en la instantánea completa; y permitir
+  actualizaciones de instalaciones existentes sin destruir los datos.
+
+3.6. app/src/main/java/ar/jornadas/data/AgendaRepository.kt
+CAMBIOS:
+- El repositorio ahora recibe la base Room además de Retrofit y el DAO.
+- Se agregó el Flow descargado, obtenido a partir de observarDescargado().
+- La respuesta Retrofit se procesa como instantánea completa.
+- La sincronización se realiza dentro de db.withTransaction:
+    * Si la respuesta es vacía, elimina las charlas.
+    * Si hay charlas, inserta los IDs nuevos con IGNORE, actualiza los campos
+      remotos y elimina los IDs que ya no están incluidos.
+    * Al terminar, registra la descarga exitosa.
+- Se mantiene la acción cambiarFavorita(id).
+MOTIVO:
+- Evitar que el refresco sobrescriba la columna favorita, actualizar
+  título/sala de un mismo ID y eliminar retiradas como la 11 en v3.
+- Realizar en forma atómica las operaciones de base de datos, incluyendo el
+  caso de marcas cambiadas durante la descarga.
+- No modificar Room si la petición Retrofit falla antes de la transacción.
+
+3.7. app/src/main/java/ar/jornadas/ui/ProgramaModel.kt
+CAMBIOS:
+- Se agregó una fábrica de ViewModel que obtiene Application y
+  SavedStateHandle desde CreationExtras.
+- Los filtros día, tema y el identificador de detalle se recuperan desde
+  SavedStateHandle; las acciones de selección actualizan tanto dicho handle
+  como sus MutableStateFlow asociados.
+- Servicios se obtiene desde JornadasApp en lugar de crear una instancia
+  nueva por ViewModel.
+- Se agregó StateFlow descargado, basado en Room.
+- Se incorporó recargarSiEsNecesario(), que utiliza la marca estática
+  yaRecargo para limitar cargas automáticas durante el proceso.
+- Se agregaron abrirFicha() y cerrarFicha() para controlar el detalle.
+- recargar() amplió el tratamiento de excepciones, distingue entre ausencia
+  de conexión y uso de datos guardados, y utiliza un AtomicInteger enVuelo
+  para intentar limitar el número de peticiones concurrentes.
+MOTIVO:
+- Centralizar el estado observable, restaurar la lectura y controlar la
+  cantidad de solicitudes a Retrofit.
+OBSERVACIÓN PENDIENTE EN ESTA VERSIÓN:
+- El control enVuelo aún permite una condición de carrera y dos solicitudes
+  simultáneas. Se recomienda reemplazarlo por una actualización pendiente
+  agrupada y serializada antes de la entrega definitiva.
+- yaRecargo es @Volatile, no una operación atómica de comparación/cambio;
+  conviene usar AtomicBoolean.compareAndSet(false, true).
+
+3.8. app/src/main/java/ar/jornadas/ui/Catalogo.kt
+CAMBIOS:
+- Se eliminó LaunchedEffect(Unit) que recargaba el programa cada vez que
+  Catalogo entraba en composición.
+- El tema dejó de vivir en remember; ahora se obtiene del ViewModel
+  como temaIdx.
+- Los selectores actualizan los filtros mediante seleccionarDia() y
+  seleccionarTema().
+- Se observa el estado descargado para decidir qué mostrar ante una falla
+  o una respuesta vacía; se mantiene el botón Actualizar y se ofrece
+  Reintentar cuando no hay descarga previa.
+MOTIVO:
+- Evitar peticiones duplicadas por navegación y conservar los filtros
+  al cambiar de pantalla o restaurar el proceso.
+OBSERVACIÓN PENDIENTE EN ESTA VERSIÓN:
+- La pantalla muestra «Sin charlas programadas» siempre que la lista
+  filtrada está vacía, aunque el catálogo tenga charlas. Debe distinguirse
+  el catálogo global vacío de la falta de coincidencias de filtros; además,
+  el estado de v4 debe conservarse visible mientras se intenta actualizar.
+
+3.9. app/src/main/java/ar/jornadas/ui/Portada.kt
+CAMBIOS:
+- La ficha abierta deja de depender de rememberSaveable local y ahora
+  se observa desde model.detalle, respaldado por SavedStateHandle.
+- Las acciones de abrir y cerrar fichas delegan en el ViewModel.
+- Se observa model.aviso y se muestra un mensaje global cuando hay una
+  falla de actualización.
+- Cuando el ID del detalle ya no existe en Room se informa
+  «Charla ya no disponible» en lugar de dejar el contenido en blanco.
+- La pestaña seleccionada continúa usando rememberSaveable.
+MOTIVO:
+- Recuperar el detalle al reconstruir la tarea, mantener visibles los
+  datos guardados tras una falla y manejar la retirada de una charla.
+
+4. ARCHIVOS DE FUENTE SIN CAMBIOS
+---------------------------------
+- app/src/main/java/ar/jornadas/lab/ServicioLocal.kt
+- app/src/main/java/ar/jornadas/legacy/AgendaImpresa.kt
+- app/src/main/java/ar/jornadas/ui/Mesa.kt
+- app/src/main/assets/programa-1.json
+- app/src/main/assets/programa-2.json
+- app/src/main/assets/programa-3.json
+- app/src/main/assets/programa-4.json
+- build.gradle.kts, settings.gradle.kts, gradle.properties y la configuración
+  del Gradle Wrapper (sin cambios funcionales en los archivos comparados).
+
+5. CORRESPONDENCIA CON LOS PEDIDOS
+---------------------------------
+- Pedido 41: estado_descarga, migración no destructiva, manejo de errores y
+  presentación del catálogo guardado — Programa.kt, AgendaRepository.kt,
+  ProgramaModel.kt, Catalogo.kt y Portada.kt.
+- Pedido 42: inserción IGNORE, actualización de campos sin sobrescribir
+  favorita y eliminación de IDs ausentes dentro de una transacción —
+  Programa.kt y AgendaRepository.kt.
+- Pedido 43: SavedStateHandle para los filtros y ficha; rememberSaveable
+  para la pestaña — ProgramaModel.kt y Portada.kt.
+- Pedido 44: eliminación de carga al componer Catalogo y control de la
+  carga automática por proceso — Catalogo.kt, ProgramaModel.kt,
+  MainActivity.kt y Servicios.kt.
+
+6. ALCANCE Y ESTADO DE ESTE DOCUMENTO
+--------------------------------------
+Este registro describe los cambios REALMENTE PRESENTES en Jornadas 3.zip,
+no modificaciones que todavía no se aplicaron.
+
+PENDIENTE antes de la versión final:
+1) Serializar y agrupar las actualizaciones repetidas en ProgramaModel.kt.
+2) Diferenciar programa vacío de filtros sin coincidencias en Catalogo.kt.
+3) Opcional para robustez: hacer atómica la marca de inicio automático.
+
+Si esos ajustes se aplican en una versión posterior, actualizar los
+apartados 3.7, 3.8 y 6 para que describan exactamente el archivo entregado.
+
+La comparación de código no sustituye la compilación del proyecto ni las
+pruebas funcionales en un emulador.
